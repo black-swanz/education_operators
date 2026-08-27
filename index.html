@@ -878,11 +878,28 @@ textarea.answer:disabled{opacity:.7}
 
 <script>
 /* ═══════════════════════════════════════════════════════════════
-   НАСТРОЙКА. Вставь сюда URL веб-приложения Apps Script.
-   Когда сайт раздаётся самим Apps Script, эта строка не нужна вовсе.
-   Пока стоит заглушка — сайт работает в демо-режиме (2735 / demo).
+   ЕДИНСТВЕННАЯ НАСТРОЙКА ЭТОГО ФАЙЛА.
+
+   Если карта лежит на GitHub (или на своём сервере) — впиши сюда адрес
+   веб-приложения Apps Script. Он заканчивается на /exec и берётся так:
+   Apps Script → Развернуть → Управление развёртываниями → «Веб-приложение».
+
+   Пример:
+   var API_URL = 'https://script.google.com/macros/s/AKfy…длинный…/exec';
+
+   Если карту раздаёт сам Apps Script (файл site внутри проекта) — трогать
+   не нужно: движок подставит адрес сам. Вписанный сюда адрес в этом случае
+   просто не используется, так что один и тот же файл годится для обоих
+   способов — и для GitHub, и для Apps Script.
+
+   Пока стоит заглушка и карта лежит не в Apps Script — работает демо-режим,
+   пароли из таблицы не действуют.
+
+   ВАЖНО: развёртывание должно быть с доступом «Все» («Anyone»). Если стоит
+   «Только у кого есть аккаунт Google» — браузер получит страницу входа Google
+   вместо ответа, и карта скажет, что сервер молчит.
    ═══════════════════════════════════════════════════════════════ */
-var API_URL = 'ВСТАВЬ_СЮДА_URL_APPS_SCRIPT';
+var API_URL = 'https://script.google.com/macros/s/AKfycbwYz6qbEuV0rNxcSPZllzOF9ErByPORZhSDq384VNGxJSr7EUdjel43kTCIkcXtctpO/exec';
 
 /* ─────────── иконки (рыцарская атрибутика) ─────────── */
 var ICONS = {
@@ -916,6 +933,8 @@ var isDemo = !HAS_GS && /ВСТАВЬ|PASTE|^$/.test(API_URL);
 
 function api(payload){
   if(isDemo) return demoApi(payload);
+
+  /* Карту раздаёт сам Apps Script — говорим напрямую, без сети. */
   if(HAS_GS){
     return new Promise(function(res){
       google.script.run
@@ -924,20 +943,37 @@ function api(payload){
         .rpc(JSON.stringify(payload));
     });
   }
-  return fetch(API_URL,{
-    method:'POST',
-    headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body:JSON.stringify(payload)
-  }).then(function(r){return r.json();}).catch(function(){return jsonp(payload);});
+
+  /* Карта лежит на другом адресе — на GitHub или своём сервере.
+     Обычный POST в Apps Script браузер не пропустит: он отвечает
+     редиректом на другой домен и без разрешения на кросс-доменный запрос.
+     Поэтому говорим тегом script — так же, как это делают страницы дней.
+     Длинные посылки (свободные ответы) всё-таки шлём POST-ом. */
+  var body=JSON.stringify(payload);
+  if(body.length>5000){
+    return fetch(API_URL,{
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:body
+    }).then(function(r){return r.json();}).catch(function(){return jsonp(payload);});
+  }
+  return jsonp(payload);
 }
 function jsonp(payload){
-  return new Promise(function(res,rej){
+  return new Promise(function(res){
     var cb='cb'+Date.now()+Math.floor(Math.random()*1e4);
-    var s=document.createElement('script');
-    window[cb]=function(d){res(d);delete window[cb];s.remove();};
-    s.onerror=function(){rej(new Error('net'));s.remove();};
-    s.src=API_URL+'?callback='+cb+'&payload='+encodeURIComponent(JSON.stringify(payload));
-    document.body.appendChild(s);
+    var s=document.createElement('script'), done=false;
+    function finish(d){
+      if(done)return; done=true;
+      try{delete window[cb];}catch(e){window[cb]=undefined;}
+      if(s.parentNode)s.parentNode.removeChild(s);
+      res(d);
+    }
+    window[cb]=function(d){finish(d||{ok:false,error:'Пустой ответ сервера'});};
+    s.onerror=function(){finish({ok:false,error:'Не получилось достучаться до таблицы. Проверь адрес Apps Script и что развёртывание открыто для всех.'});};
+    s.src=API_URL+(API_URL.indexOf('?')>-1?'&':'?')+'callback='+cb+'&payload='+encodeURIComponent(JSON.stringify(payload));
+    document.head.appendChild(s);
+    setTimeout(function(){finish({ok:false,error:'Таблица не ответила. Проверь, что развёртывание открыто для всех.'});},20000);
   });
 }
 
