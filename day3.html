@@ -3213,15 +3213,37 @@ show(0);
 (function(){
   var MAYAK_API = '';        /* можно вписать адрес веб-приложения Apps Script */
 
-  /* ── что передала карта ── */
+  /* ── что передала карта ──
+     Сначала смотрим в адрес: карта может жить на другом домене (Apps Script),
+     а день — на GitHub. Между разными адресами память вкладки не передаётся,
+     поэтому карта кладёт всё в ссылку. Потом — память этой же вкладки. */
+  function q(name){
+    var m = new RegExp('[?&]' + name + '=([^&]*)').exec(location.search);
+    return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : '';
+  }
+
   var ctx = null;
   try { ctx = JSON.parse(sessionStorage.getItem('mayak-day') || 'null'); } catch(e){}
   if (!ctx) { try { ctx = JSON.parse(sessionStorage.getItem('mayak') || 'null'); } catch(e){} }
 
-  var API   = (ctx && ctx.api)   || MAYAK_API || '';
-  var LOGIN = (ctx && (ctx.login || ctx.l)) || '';
-  var TOKEN = (ctx && (ctx.token || ctx.t)) || '';
-  var DAYID = (ctx && ctx.id) || String(window.LUCHI_DAY || '');
+  var API   = q('api')  || (ctx && ctx.api)   || MAYAK_API || '';
+  var LOGIN = q('u')    || (ctx && (ctx.login || ctx.l)) || '';
+  var TOKEN = q('t')    || (ctx && (ctx.token || ctx.t)) || '';
+  var DAYID = q('d')    || (ctx && ctx.id) || String(window.LUCHI_DAY || '');
+  var BACK  = q('back') || (ctx && ctx.back) || '';
+
+  /* запоминаем для этой вкладки, чтобы пережить обновление страницы */
+  if (LOGIN && TOKEN) {
+    try {
+      sessionStorage.setItem('mayak-day', JSON.stringify(
+        { id: DAYID, api: API, login: LOGIN, token: TOKEN, back: BACK }));
+      sessionStorage.setItem('mayak', JSON.stringify({ l: LOGIN, t: TOKEN }));
+    } catch(e){}
+  }
+  /* убираем логин и ключ из видимого адреса */
+  if (location.search && history.replaceState) {
+    try { history.replaceState(null, '', location.pathname + location.hash); } catch(e){}
+  }
 
   var live = !!(API && LOGIN && TOKEN && DAYID);
 
@@ -3394,8 +3416,21 @@ show(0);
     setTimeout(function(){ box.classList.remove('is-on'); }, 7000);
   }
 
+  /* «К карте» должна вести туда, откуда человек пришёл, а не на соседний файл */
+  function fixMapLinks(){
+    if (!BACK) return;
+    var a = document.querySelector('a.mapkey');
+    if (a) a.href = BACK;
+    document.addEventListener('click', function(e){
+      var b = e.target && e.target.closest && e.target.closest('.tomap');
+      if (b) { e.preventDefault(); e.stopPropagation(); location.href = BACK; }
+    }, true);
+  }
+
   function boot(){
     collectTasks();
+    fixMapLinks();
+    setTimeout(fixMapLinks, 400);
     send({action:'dayOpen', login:LOGIN, token:TOKEN, lesson:DAYID});
 
     /* первый клик по заданию и след из нажатий */

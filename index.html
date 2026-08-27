@@ -1570,17 +1570,23 @@ function openLesson(id){
   S.lessons.forEach(function(x){ if(String(x.id)===String(id)) les=x; });
   var page=pageOf(les);
   if(page){
-    /* всё, что нужно странице дня: кто зашёл, какой это остров и куда слать итог */
+    /* Страница дня может лежать на другом адресе — например на GitHub, пока карту
+       отдаёт Apps Script. Память вкладки между разными адресами не передаётся,
+       поэтому всё нужное кладём прямо в ссылку. */
     try{
       sessionStorage.setItem('mayak',JSON.stringify({l:S.login,t:S.token}));
       sessionStorage.setItem('mayak-day',JSON.stringify({
-        id:String(id),
-        api:isDemo?'':API_URL,
-        login:S.login,
-        token:S.token
+        id:String(id), api:isDemo?'':API_URL, login:S.login, token:S.token
       }));
     }catch(_){}
-    location.href=page;
+
+    var back=location.href.split('#')[0];
+    var q='u='+encodeURIComponent(S.login)+
+          '&t='+encodeURIComponent(S.token)+
+          '&d='+encodeURIComponent(String(id))+
+          '&back='+encodeURIComponent(back)+
+          (isDemo?'':'&api='+encodeURIComponent(API_URL));
+    location.href = page + (page.indexOf('?')>-1 ? '&' : '?') + q;
     return;
   }
   $('#tasks').innerHTML='<div class="loading">Опускаем мост…</div>';
