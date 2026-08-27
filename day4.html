@@ -602,6 +602,19 @@ body.mk-night .card--dark{background:rgba(2,32,40,.84) !important;backdrop-filte
 @media (prefers-reduced-motion:reduce){
   .mk-moon,.mk-stars i,.mk-mist i{animation:none}
 }
+
+/* ── плашка «ушло в журнал» ── */
+.mk-note{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));z-index:300;
+  transform:translate(-50%,18px);opacity:0;pointer-events:none;max-width:min(92vw,520px);
+  background:rgba(2,32,40,.94);border:1px solid rgba(113,215,255,.42);border-radius:100px;
+  padding:11px 22px;text-align:center;
+  font-family:var(--font-display),'Arial Narrow',sans-serif;font-weight:500;
+  text-transform:uppercase;letter-spacing:.1em;font-size:11px;color:var(--ice);
+  backdrop-filter:blur(8px);box-shadow:0 12px 30px rgba(2,32,40,.5);
+  transition:opacity .45s ease, transform .45s cubic-bezier(.2,.85,.3,1)}
+.mk-note.is-on{opacity:1;transform:translate(-50%,0)}
+.mk-note.is-warn{border-color:var(--coral);color:var(--coral)}
+@media (max-width:760px){ .mk-note{bottom:calc(76px + env(safe-area-inset-bottom));font-size:10px;padding:10px 16px} }
 </style>
 </head>
 <body>
@@ -3469,6 +3482,221 @@ show(0);
       if (name && name.parentNode) name.parentNode.insertBefore(t, name.nextSibling);
       else head.appendChild(t);
     }
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+
+/* ═══════════════════════════════════════════════════════════
+   ЛУЧ МАЯКА · связь страницы дня с картой и таблицей
+
+   Ничего не меняет в обучении. Смотрит со стороны и записывает:
+     первый клик по заданию      → «Старт N» в журнале
+     чем задание закончилось     → «Задание N. Ответ», «Балл», «Финиш N»
+     звёзды навыков в конце дня  → лист «Прогресс»
+
+   ПРАВИЛО МОНЕТ (считает сервер, здесь только факты):
+   ошибся в задании хотя бы раз — за него ноль.
+
+   Адрес Apps Script карта кладёт в память вкладки при переходе.
+   Если день открыт по прямой ссылке, адрес можно вписать руками
+   в MAYAK_API ниже — тогда день пишет в таблицу и без карты.
+   ═══════════════════════════════════════════════════════════ */
+(function(){
+  var MAYAK_API = '';        /* можно вписать адрес веб-приложения Apps Script */
+
+  /* ── что передала карта ── */
+  var ctx = null;
+  try { ctx = JSON.parse(sessionStorage.getItem('mayak-day') || 'null'); } catch(e){}
+  if (!ctx) { try { ctx = JSON.parse(sessionStorage.getItem('mayak') || 'null'); } catch(e){} }
+
+  var API   = (ctx && ctx.api)   || MAYAK_API || '';
+  var LOGIN = (ctx && (ctx.login || ctx.l)) || '';
+  var TOKEN = (ctx && (ctx.token || ctx.t)) || '';
+  var DAYID = (ctx && ctx.id) || String(window.LUCHI_DAY || '');
+
+  var live = !!(API && LOGIN && TOKEN && DAYID);
+
+  /* ── разговор с Apps Script: тег script, поэтому без CORS ── */
+  var jsonpN = 0;
+  function send(payload){
+    return new Promise(function(resolve){
+      if (!live) { resolve({ok:false, offline:true}); return; }
+      var cb = '__mayak_cb' + (++jsonpN);
+      var sc = document.createElement('script');
+      var done = false;
+      function finish(r){
+        if (done) return; done = true;
+        try { delete window[cb]; } catch(e){ window[cb] = undefined; }
+        if (sc.parentNode) sc.parentNode.removeChild(sc);
+        resolve(r);
+      }
+      window[cb] = function(r){ finish(r || {ok:false}); };
+      sc.onerror = function(){ finish({ok:false, error:'нет связи'}); };
+      sc.src = API + (API.indexOf('?') > -1 ? '&' : '?') +
+               'callback=' + cb + '&payload=' + encodeURIComponent(JSON.stringify(payload));
+      document.head.appendChild(sc);
+      setTimeout(function(){ finish({ok:false, error:'сервер молчит'}); }, 15000);
+    });
+  }
+
+  /* ── список заданий дня в порядке, в котором они идут на странице ── */
+  var TASKS = [];
+  function collectTasks(){
+    var nodes = document.querySelectorAll('.screen[data-task], .screen[data-enc]');
+    TASKS = [];
+    Array.prototype.forEach.call(nodes, function(el){
+      var key = el.dataset.task ? el.dataset.task : ('enc' + el.dataset.enc);
+      if (TASKS.some(function(t){ return t.key === key; })) return;   /* одно задание — одна запись */
+      TASKS.push({
+        key:   key,
+        enc:   el.dataset.task ? -1 : Number(el.dataset.enc),
+        el:    el,
+        title: titleOf(el, key),
+        no:    TASKS.length + 1,
+        opened: false,
+        sent:   false,
+        trace:  []
+      });
+    });
+  }
+  /* Заголовок задания: сперва ищем внутри интерактивного блока,
+     потом берём последний заголовок экрана — сюжетные карточки идут раньше. */
+  function titleOf(el, key){
+    function txt(n){ return n ? (n.textContent || '').replace(/\s+/g,' ').trim() : ''; }
+    var dayTitle = txt(document.querySelector('.screen h2'));   /* заголовок дня — не подходит */
+
+    var inTask = el.querySelectorAll('.task h2, .task h3');
+    var all    = el.querySelectorAll('h2, h3');
+    var picks  = [
+      inTask.length ? txt(inTask[inTask.length - 1]) : '',
+      all.length    ? txt(all[all.length - 1])       : '',
+      txt(el.querySelector('.task .section-label')),
+      key
+    ];
+    for (var i = 0; i < picks.length; i++){
+      if (picks[i] && picks[i] !== dayTitle) return picks[i];
+    }
+    return key;
+  }
+
+  function taskOfNode(node){
+    for (var i = 0; i < TASKS.length; i++) if (TASKS[i].el.contains(node)) return TASKS[i];
+    return null;
+  }
+
+  /* ── что человек нажал: короткая подпись кнопки или карточки ── */
+  var CONTROL = 'button, [role="button"], a[href], label, .opt, .chip, .choice, .sw, ' +
+                '.dnd-chips > *, .dnd-zone__slot, .zone, .tile, .dtile, .fchip, .mtag, .kbd';
+  function labelOf(node){
+    var el = node && node.nodeType === 1 ? node : (node && node.parentNode);
+    var hit = null;
+    while (el && el !== document.body){
+      if (el.matches && el.matches(CONTROL)) { hit = el; break; }
+      if (el.draggable) { hit = el; break; }
+      el = el.parentNode;
+    }
+    if (!hit) return '';                       /* клик мимо органов управления — не ответ */
+    var t = (hit.textContent || hit.getAttribute('aria-label') || '').replace(/\s+/g,' ').trim();
+    if (t.length > 64) t = t.slice(0, 61) + '…';
+    return t;
+  }
+
+  /* ── задание закончено? спрашиваем у авторской логики ── */
+  function isDone(t){
+    if (t.enc >= 0){
+      return !!(window.firstChoice && window.firstChoice[t.enc] !== null &&
+                window.firstChoice[t.enc] !== undefined);
+    }
+    return !!(window.taskDone && window.taskDone[t.key]);
+  }
+  function errorsOf(t){
+    if (t.enc >= 0) return (window.resolved && window.resolved[t.enc]) ? 0 : 1;
+    return Number(window.errByTask && window.errByTask[t.key]) || 0;
+  }
+
+  function openTask(t){
+    if (t.opened) return;
+    t.opened = true;
+    send({action:'taskOpen', login:LOGIN, token:TOKEN, lesson:DAYID, no:t.no, key:t.key});
+  }
+  function finishTask(t){
+    if (t.sent) return;
+    t.sent = true;
+    send({action:'taskAnswer', login:LOGIN, token:TOKEN, lesson:DAYID,
+          no:t.no, key:t.key, title:t.title,
+          answer:t.trace.join(' → '), errors:errorsOf(t)});
+  }
+
+  /* ── звёзды навыков ── */
+  function starsOfDay(){
+    var list = window.MY_STARS;
+    if (!Array.isArray(list) || !list.length) return [];
+    var state = {};
+    try { state = JSON.parse(localStorage.getItem('luchi_stars_v1') || '{}') || {}; } catch(e){}
+    return list.map(function(st){
+      var got = state[st.id];
+      return { id:st.id, title:st.t || '', skill:st.s || '', clean: !!(got && got.clean) };
+    });
+  }
+
+  var daySent = false;
+  function reportDay(){
+    if (daySent) return;
+    daySent = true;
+    TASKS.forEach(function(t){ if (isDone(t)) finishTask(t); });
+    if (!live){ note('Монеты не ушли в журнал: день открыт без карты.', true); return; }
+    send({action:'dayReport', login:LOGIN, token:TOKEN, lesson:DAYID, stars:starsOfDay()})
+      .then(function(r){
+        if (r && r.ok){
+          var n = Number(r.coins) || 0;
+          note(n > 0
+            ? ('В журнал ушло ' + n.toFixed(2) + ' KGN · заданий без ошибок: ' + r.clean + ' из ' + r.of)
+            : 'День записан в журнал. Монет за него нет — в заданиях были ошибки.');
+        } else {
+          daySent = false;
+          note('Не получилось записать день. Нажми «День пройден» ещё раз.', true);
+        }
+      });
+  }
+
+  /* ── короткая плашка снизу ── */
+  function note(text, warn){
+    var box = document.getElementById('mkNote');
+    if (!box){
+      box = document.createElement('div');
+      box.id = 'mkNote';
+      document.body.appendChild(box);
+    }
+    box.className = 'mk-note' + (warn ? ' is-warn' : '');
+    box.textContent = text;
+    requestAnimationFrame(function(){ box.classList.add('is-on'); });
+    setTimeout(function(){ box.classList.remove('is-on'); }, 7000);
+  }
+
+  function boot(){
+    collectTasks();
+    send({action:'dayOpen', login:LOGIN, token:TOKEN, lesson:DAYID});
+
+    /* первый клик по заданию и след из нажатий */
+    document.addEventListener('click', function(e){
+      var t = taskOfNode(e.target);
+      if (!t) return;
+      openTask(t);
+      if (!t.sent){
+        var l = labelOf(e.target);
+        if (l && t.trace[t.trace.length - 1] !== l && t.trace.length < 24) t.trace.push(l);
+      }
+    }, true);
+
+    /* авторская логика сама решает, когда задание закрыто — просто следим */
+    setInterval(function(){
+      TASKS.forEach(function(t){ if (!t.sent && isDone(t)) finishTask(t); });
+    }, 500);
+
+    var b = document.getElementById('doneBtn');
+    if (b) b.addEventListener('click', function(){ setTimeout(reportDay, 60); });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

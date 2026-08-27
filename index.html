@@ -548,6 +548,8 @@ h1,h2,h3,.display{font-family:var(--font-display);font-weight:900;text-transform
 .axrow .nm{font-family:var(--font-display);font-weight:900;text-transform:uppercase;font-size:13px;line-height:1.05}
 .axrow .nm small{display:block;font-family:var(--font-body);font-weight:400;text-transform:none;
   font-size:11.5px;opacity:.6;letter-spacing:0;margin-top:3px}
+.axrow .nm .star-of{display:block;font-family:var(--font-display);font-weight:500;font-style:normal;
+  text-transform:uppercase;letter-spacing:.12em;font-size:9.5px;color:var(--teal);opacity:.65;margin-top:4px}
 .axrow .bar{height:8px;border-radius:var(--pill);background:rgba(2,32,40,.12);overflow:hidden}
 .axrow .bar i{display:block;height:100%;background:var(--coral)}
 .axrow b{font-family:var(--font-display);font-weight:900;font-size:20px;color:var(--teal);text-align:right}
@@ -1578,8 +1580,16 @@ function openLesson(id){
   S.lessons.forEach(function(x){ if(String(x.id)===String(id)) les=x; });
   var page=pageOf(les);
   if(page){
-    /* логин уже лежит в sessionStorage — со страницы дня вернёмся сюда же */
-    try{sessionStorage.setItem('mayak',JSON.stringify({l:S.login,t:S.token}));}catch(_){}
+    /* всё, что нужно странице дня: кто зашёл, какой это остров и куда слать итог */
+    try{
+      sessionStorage.setItem('mayak',JSON.stringify({l:S.login,t:S.token}));
+      sessionStorage.setItem('mayak-day',JSON.stringify({
+        id:String(id),
+        api:isDemo?'':API_URL,
+        login:S.login,
+        token:S.token
+      }));
+    }catch(_){}
     location.href=page;
     return;
   }
@@ -2231,7 +2241,14 @@ var AXIS_HINT={
   flow:'знание регламентов и порядка действий',
   cross:'работа со смежными отделами',
   care:'тон, эмпатия и забота о клиенте',
-  guard:'сколько заданий взято без ошибок'
+  guard:'сколько испытаний взято без ошибок'
+};
+/* Звёзды со страниц дней ложатся на те же направления. */
+var AXIS_STAR={
+  flow:'Память',
+  cross:'Чутьё',
+  care:'Красноречие',
+  guard:'Твёрдая рука'
 };
 
 function radarSVG(ax){
@@ -2268,7 +2285,9 @@ function radarSVG(ax){
 function axisRows(ax){
   return '<div class="axrows">'+AXIS_ORDER.map(function(k){
     var v=ax&&ax[k]!=null?ax[k]:null;
-    return '<div class="axrow"><span class="nm">'+esc(AXIS_LABEL[k])+'<small>'+esc(AXIS_HINT[k])+'</small></span>'+
+    return '<div class="axrow"><span class="nm">'+esc(AXIS_LABEL[k])+
+      '<small>'+esc(AXIS_HINT[k])+'</small>'+
+      '<em class="star-of">звёзды «'+esc(AXIS_STAR[k])+'»</em></span>'+
       '<span class="bar"><i style="width:'+(v==null?0:v)+'%"></i></span>'+
       '<b>'+(v==null?'—':v)+'</b></div>';
   }).join('')+'</div>';
@@ -2292,7 +2311,7 @@ function daysTable(days){
 function openCompass(){
   $('#compass').innerHTML='<button class="xclose" id="compClose" aria-label="Закрыть">×</button>'+
     '<p class="rn2">Четыре направления роста</p><h2>Компас заботы</h2>'+
-    '<p class="mini">Собирается сам из твоих ответов. Три стороны — метки заданий, четвёртая — как аккуратно ты идёшь.</p>'+
+    '<p class="mini">Собирается сам из твоих ответов и звёзд, зажжённых на островах.</p>'+
     '<div class="loading">Считаем…</div>';
   $('#compass').classList.add('on');
   $('#compClose').addEventListener('click',closeCompass);
