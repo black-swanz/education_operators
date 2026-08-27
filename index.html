@@ -2235,24 +2235,17 @@ $('#admBack').addEventListener('click',function(){
 
 
 /* ═══════════ КОМПАС ЗАБОТЫ — четыре направления роста ═══════════ */
-var AXIS_ORDER=['flow','cross','care','guard'];
-var AXIS_LABEL={flow:'Мануалы и флоу',cross:'Взаимодействие',care:'Эмпатия и забота',guard:'Осторожность'};
+var AXIS_ORDER=['ctx','resp','hon','peer'];
+var AXIS_LABEL={ctx:'Контекст',resp:'Ответственность',hon:'Честность',peer:'На равных'};
 var AXIS_HINT={
-  flow:'знание регламентов и порядка действий',
-  cross:'работа со смежными отделами',
-  care:'тон, эмпатия и забота о клиенте',
-  guard:'сколько испытаний взято без ошибок'
-};
-/* Звёзды со страниц дней ложатся на те же направления. */
-var AXIS_STAR={
-  flow:'Память',
-  cross:'Чутьё',
-  care:'Красноречие',
-  guard:'Твёрдая рука'
+  ctx:'отвечаем на состояние человека, а не на тикет — подстраиваемся под тон, темп и настроение',
+  resp:'говорим «я» вместо «мы»; холд — с причиной, сроком и действием; отвечаем за обещания',
+  hon:'никакой псевдовежливости; отказ — это развилка: этого не могу, но вот что могу',
+  peer:'клиент — взрослый человек: не упрощаем до детского уровня и не поучаем'
 };
 
 function radarSVG(ax){
-  var cx=160,cy=150,R=78,LR=112;
+  var cx=190,cy=150,R=78,LR=110;
   var vals=AXIS_ORDER.map(function(k){var v=ax&&ax[k]!=null?Number(ax[k]):0;return Math.max(0,Math.min(100,v));});
   function pt(i,r){var a=-Math.PI/2+i*Math.PI/2;return [cx+Math.cos(a)*r,cy+Math.sin(a)*r];}
   function poly(r){return [0,1,2,3].map(function(i){var p=pt(i,r);return p[0].toFixed(1)+','+p[1].toFixed(1);}).join(' ');}
@@ -2266,17 +2259,20 @@ function radarSVG(ax){
     return '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="4.5" fill="var(--coral)" stroke="var(--sand)" stroke-width="2"/>';}).join('');
   var labels=AXIS_ORDER.map(function(k,i){
     var p=pt(i,LR), v=ax&&ax[k]!=null?ax[k]:null;
-    var anchor='middle';
+    /* цифра — на своей спице, подпись боковых осей прижата к краю:
+       «Ответственность» длиннее, чем расстояние до угла */
+    var anchor = i===1 ? 'end' : (i===3 ? 'start' : 'middle');
+    var lx = i===1 ? 378 : (i===3 ? 2 : p[0]);
     var y=p[1];
     if(i===0)y=p[1]-6; if(i===2)y=p[1]+16;
-    return '<text x="'+p[0].toFixed(1)+'" y="'+(y-4).toFixed(1)+'" text-anchor="'+anchor+'" '+
+    return '<text x="'+p[0].toFixed(1)+'" y="'+(y-4).toFixed(1)+'" text-anchor="middle" '+
       'style="font-family:var(--font-display);font-weight:900;font-size:19px;fill:'+(v==null?'rgba(2,32,40,.3)':'var(--teal)')+'">'+
       (v==null?'—':v)+'</text>'+
-      '<text x="'+p[0].toFixed(1)+'" y="'+(y+9).toFixed(1)+'" text-anchor="'+anchor+'" '+
+      '<text x="'+lx.toFixed(1)+'" y="'+(y+9).toFixed(1)+'" text-anchor="'+anchor+'" '+
       'style="font-family:var(--font-display);font-weight:500;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;fill:var(--ink);opacity:.65">'+
       esc(AXIS_LABEL[k])+'</text>';
   }).join('');
-  return '<svg class="radar" viewBox="0 0 320 300" role="img" aria-label="Компас заботы">'+
+  return '<svg class="radar" viewBox="0 0 380 300" role="img" aria-label="Компас заботы">'+
     rings+spokes+
     '<polygon points="'+shape+'" fill="rgba(255,115,119,.32)" stroke="var(--coral)" stroke-width="2.5" stroke-linejoin="round"/>'+
     dots+labels+'</svg>';
@@ -2286,8 +2282,7 @@ function axisRows(ax){
   return '<div class="axrows">'+AXIS_ORDER.map(function(k){
     var v=ax&&ax[k]!=null?ax[k]:null;
     return '<div class="axrow"><span class="nm">'+esc(AXIS_LABEL[k])+
-      '<small>'+esc(AXIS_HINT[k])+'</small>'+
-      '<em class="star-of">звёзды «'+esc(AXIS_STAR[k])+'»</em></span>'+
+      '<small>'+esc(AXIS_HINT[k])+'</small></span>'+
       '<span class="bar"><i style="width:'+(v==null?0:v)+'%"></i></span>'+
       '<b>'+(v==null?'—':v)+'</b></div>';
   }).join('')+'</div>';
@@ -2311,7 +2306,7 @@ function daysTable(days){
 function openCompass(){
   $('#compass').innerHTML='<button class="xclose" id="compClose" aria-label="Закрыть">×</button>'+
     '<p class="rn2">Четыре направления роста</p><h2>Компас заботы</h2>'+
-    '<p class="mini">Собирается сам из твоих ответов и звёзд, зажжённых на островах.</p>'+
+    '<p class="mini">Собирается сам из того, как ты проходишь задания на островах.</p>'+
     '<div class="loading">Считаем…</div>';
   $('#compass').classList.add('on');
   $('#compClose').addEventListener('click',closeCompass);

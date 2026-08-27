@@ -3346,10 +3346,13 @@ show(0);
   /* ── что человек нажал: короткая подпись кнопки или карточки ── */
   var CONTROL = 'button, [role="button"], a[href], label, .opt, .chip, .choice, .sw, ' +
                 '.dnd-chips > *, .dnd-zone__slot, .zone, .tile, .dtile, .fchip, .mtag, .kbd';
+  /* сюжетные записки и раскрытие теории — не ответ, в журнал не идут */
+  var NOT_ANSWER = '.notecall, .acc__h, .membtn, .copybtn, .xclose';
   function labelOf(node){
     var el = node && node.nodeType === 1 ? node : (node && node.parentNode);
     var hit = null;
     while (el && el !== document.body){
+      if (el.matches && el.matches(NOT_ANSWER)) return '';
       if (el.matches && el.matches(CONTROL)) { hit = el; break; }
       if (el.draggable) { hit = el; break; }
       el = el.parentNode;
@@ -3369,7 +3372,16 @@ show(0);
     return !!(window.taskDone && window.taskDone[t.key]);
   }
   function errorsOf(t){
-    if (t.enc >= 0) return (window.resolved && window.resolved[t.enc]) ? 0 : 1;
+    if (t.enc >= 0){
+      /* встреча оплачивается, только если ПЕРВЫЙ выбор был верным.
+         «Починить» встречу в конце дня можно — туман разойдётся,
+         но монеты за неё уже не вернутся. */
+      var i = t.enc, ci = window.firstChoice ? window.firstChoice[i] : null;
+      if (ci === null || ci === undefined) return 1;
+      var e = window.ENC && window.ENC[i];
+      if (e && e.choices && e.choices[ci]) return e.choices[ci].v ? 0 : 1;
+      return (window.resolved && window.resolved[i]) ? 0 : 1;
+    }
     return Number(window.errByTask && window.errByTask[t.key]) || 0;
   }
 
